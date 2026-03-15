@@ -9,7 +9,6 @@ let redis: Redis | null = null;
 export function getRedis(): Redis {
   if (!redis) {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    logger.info('Tentativo connessione Redis', { url: redisUrl.replace(/\/\/.*@/, '//***@') });
 
     redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
@@ -28,12 +27,8 @@ export function getRedis(): Redis {
       logger.info('Connesso a Redis');
     });
 
-    redis.on('ready', () => {
-      logger.info('Redis pronto');
-    });
-
     redis.on('error', (error) => {
-      logger.error('Errore Redis', { error: error.message, code: (error as any).code });
+      logger.error('Errore Redis', { error: error.message });
     });
 
     redis.on('close', () => {
@@ -46,20 +41,10 @@ export function getRedis(): Redis {
 
 export async function connectRedis(): Promise<void> {
   const client = getRedis();
-  // Con lazyConnect: false, la connessione è già avviata
-  // Aspettiamo che sia pronta
-  if (client.status !== 'ready') {
+  if (client.status !== 'ready' && client.status !== 'connect') {
     await new Promise<void>((resolve, reject) => {
-      const onReady = () => {
-        client.removeListener('error', onError);
-        resolve();
-      };
-      const onError = (err: Error) => {
-        client.removeListener('ready', onReady);
-        reject(err);
-      };
-      client.once('ready', onReady);
-      client.once('error', onError);
+      client.once('ready', resolve);
+      client.once('error', reject);
     });
   }
 }
