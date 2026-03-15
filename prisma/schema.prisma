@@ -1,0 +1,499 @@
+// DocuVault - Schema Prisma per PostgreSQL
+// Sistema di gestione documentale enterprise
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === LICENZE E ORGANIZZAZIONI ===
+
+enum LicensePlan {
+  BASE
+  TEAM
+  BUSINESS
+  ENTERPRISE
+}
+
+model License {
+  id             String       @id @default(uuid())
+  licenseKey     String       @unique
+  plan           LicensePlan
+  maxUsers       Int
+  maxStorageGB   Int
+  features       Json         // Array di feature abilitate
+  validFrom      DateTime
+  validUntil     DateTime
+  isActive       Boolean      @default(true)
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([licenseKey])
+}
+
+model Organization {
+  id            String   @id @default(uuid())
+  name          String
+  slug          String   @unique
+  domain        String?
+  logo          String?
+  settings      Json     @default("{}")
+  storageUsedMB Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  license            License?
+  users              User[]
+  vaults             Vault[]
+  metadataClasses    MetadataClass[]
+  workflows          Workflow[]
+  retentionPolicies  RetentionPolicy[]
+  tags               Tag[]
+
+  @@index([slug])
+}
+
+// === UTENTI E AUTENTICAZIONE ===
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  READONLY
+}
+
+model User {
+  id                String       @id @default(uuid())
+  email             String       @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  role              UserRole     @default(USER)
+  avatar            String?
+  isActive          Boolean      @default(true)
+  emailVerified     Boolean      @default(false)
+  lastLoginAt       DateTime?
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordReset[]
+  documents          Document[]
+  documentVersions   DocumentVersion[]
+  checkouts          Document[]          @relation("DocumentCheckout")
+  documentMetadata   DocumentMetadata[]
+  documentPermissions DocumentPermission[]
+  workflowAssignments WorkflowStateDefinition[] @relation("WorkflowAssignees")
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([token])
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+// === VAULT E DOCUMENTI ===
+
+model Vault {
+  id              String        @id @default(uuid())
+  name            String
+  description     String?
+  icon            String?
+  color           String?
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+  metadataClassId String?
+  metadataClass   MetadataClass? @relation(fields: [metadataClassId], references: [id])
+  isDefault       Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  documents Document[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+enum DocumentStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+model Document {
+  id                String         @id @default(uuid())
+  name              String
+  description       String?
+  mimeType          String
+  status            DocumentStatus @default(ACTIVE)
+  vaultId           String
+  vault             Vault          @relation(fields: [vaultId], references: [id])
+  createdById       String
+  createdBy         User           @relation(fields: [createdById], references: [id])
+  currentVersionId  String?        @unique
+  currentVersion    DocumentVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+
+  // Checkout per versioning esclusivo
+  checkedOutById    String?
+  checkedOutBy      User?          @relation("DocumentCheckout", fields: [checkedOutById], references: [id])
+  checkedOutAt      DateTime?
+
+  // Workflow
+  workflowId        String?
+  workflow          Workflow?      @relation(fields: [workflowId], references: [id])
+  workflowStateId   String?
+  workflowState     WorkflowStateDefinition? @relation(fields: [workflowStateId], references: [id])
+
+  // Retention
+  retentionPolicyId String?
+  retentionPolicy   RetentionPolicy? @relation(fields: [retentionPolicyId], references: [id])
+  retentionExpiresAt DateTime?
+
+  // Soft delete
+  deletedAt         DateTime?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  versions          DocumentVersion[] @relation("DocumentVersions")
+  metadata          DocumentMetadata[]
+  permissions       DocumentPermission[]
+  tags              DocumentTag[]
+  auditLogs         AuditLog[]
+
+  @@index([vaultId])
+  @@index([status])
+  @@index([createdById])
+  @@index([workflowStateId])
+  @@index([deletedAt])
+  @@index([name])
+}
+
+model DocumentVersion {
+  id            String    @id @default(uuid())
+  versionNumber Int
+  documentId    String
+  document      Document  @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Storage
+  storagePath   String    // Path nel bucket S3/MinIO
+  fileSizeBytes Int
+  checksum      String    // SHA-256
+
+  // OCR
+  ocrText       String?   @db.Text
+  ocrProcessed  Boolean   @default(false)
+  ocrProcessedAt DateTime?
+
+  // Metadata versione
+  comment       String?
+  createdById   String
+  createdBy     User      @relation(fields: [createdById], references: [id])
+  createdAt     DateTime  @default(now())
+
+  currentOf     Document? @relation("CurrentVersion")
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+}
+
+// === METADATA DINAMICI ===
+
+model MetadataClass {
+  id              String            @id @default(uuid())
+  name            String
+  description     String?
+  organizationId  String
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  fields          MetadataField[]
+  vaults          Vault[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+enum MetadataFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  MULTISELECT
+  BOOLEAN
+  USER
+  DOCUMENT_REF
+}
+
+model MetadataField {
+  id              String            @id @default(uuid())
+  name            String
+  label           String
+  type            MetadataFieldType
+  isRequired      Boolean           @default(false)
+  isSearchable    Boolean           @default(true)
+  defaultValue    String?
+  options         Json?             // Per SELECT/MULTISELECT: array di opzioni
+  order           Int               @default(0)
+  metadataClassId String
+  metadataClass   MetadataClass     @relation(fields: [metadataClassId], references: [id], onDelete: Cascade)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  values          DocumentMetadata[]
+
+  @@unique([metadataClassId, name])
+  @@index([metadataClassId])
+}
+
+model DocumentMetadata {
+  id              String        @id @default(uuid())
+  documentId      String
+  document        Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fieldId         String
+  field           MetadataField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  // Valori per diversi tipi (solo uno popolato)
+  textValue       String?
+  numberValue     Float?
+  dateValue       DateTime?
+  booleanValue    Boolean?
+  jsonValue       Json?         // Per MULTISELECT
+
+  // Riferimenti
+  userRefId       String?
+  userRef         User?         @relation(fields: [userRefId], references: [id])
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([documentId, fieldId])
+  @@index([documentId])
+  @@index([fieldId])
+  @@index([textValue])
+  @@index([dateValue])
+}
+
+// === TAG ===
+
+model Tag {
+  id              String       @id @default(uuid())
+  name            String
+  color           String       @default("#6366f1")
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+
+  documents       DocumentTag[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model DocumentTag {
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([documentId, tagId])
+  @@index([tagId])
+}
+
+// === PERMESSI ===
+
+enum PermissionType {
+  READ
+  WRITE
+  DELETE
+  SHARE
+  ADMIN
+}
+
+model DocumentPermission {
+  id           String         @id @default(uuid())
+  documentId   String
+  document     Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   PermissionType
+  grantedAt    DateTime       @default(now())
+  expiresAt    DateTime?
+
+  @@unique([documentId, userId, permission])
+  @@index([documentId])
+  @@index([userId])
+}
+
+// === WORKFLOW ===
+
+model Workflow {
+  id              String                    @id @default(uuid())
+  name            String
+  description     String?
+  isActive        Boolean                   @default(true)
+  organizationId  String
+  organization    Organization              @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  states          WorkflowStateDefinition[]
+  transitions     WorkflowTransition[]
+  documents       Document[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model WorkflowStateDefinition {
+  id              String              @id @default(uuid())
+  name            String
+  description     String?
+  color           String              @default("#6366f1")
+  isInitial       Boolean             @default(false)
+  isFinal         Boolean             @default(false)
+  order           Int                 @default(0)
+  workflowId      String
+  workflow        Workflow            @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  // Utenti assegnabili a questo stato
+  assignees       User[]              @relation("WorkflowAssignees")
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  documents       Document[]
+  transitionsFrom WorkflowTransition[] @relation("TransitionFrom")
+  transitionsTo   WorkflowTransition[] @relation("TransitionTo")
+
+  @@unique([workflowId, name])
+  @@index([workflowId])
+}
+
+model WorkflowTransition {
+  id              String                  @id @default(uuid())
+  name            String
+  fromStateId     String
+  fromState       WorkflowStateDefinition @relation("TransitionFrom", fields: [fromStateId], references: [id], onDelete: Cascade)
+  toStateId       String
+  toState         WorkflowStateDefinition @relation("TransitionTo", fields: [toStateId], references: [id], onDelete: Cascade)
+  workflowId      String
+  workflow        Workflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  // Condizioni e azioni
+  requiredRole    UserRole?
+  notifyUsers     Boolean                 @default(true)
+
+  createdAt       DateTime                @default(now())
+
+  @@unique([workflowId, fromStateId, toStateId])
+  @@index([workflowId])
+}
+
+// === AUDIT LOG ===
+
+enum AuditAction {
+  VIEW
+  DOWNLOAD
+  CREATE
+  EDIT
+  DELETE
+  RESTORE
+  CHECKIN
+  CHECKOUT
+  SHARE
+  PERMISSION_CHANGE
+  WORKFLOW_CHANGE
+  METADATA_CHANGE
+  VERSION_CREATE
+  LOGIN
+  LOGOUT
+}
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  action       AuditAction
+  entityType   String      // Document, User, Vault, etc.
+  entityId     String
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  documentId   String?
+  document     Document?   @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  // Dettagli
+  details      Json?       // Info aggiuntive sull'azione
+  ipAddress    String?
+  userAgent    String?
+
+  createdAt    DateTime    @default(now())
+
+  @@index([userId])
+  @@index([documentId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// === RETENTION POLICIES ===
+
+enum RetentionAction {
+  ARCHIVE
+  DELETE
+  NOTIFY
+}
+
+model RetentionPolicy {
+  id              String          @id @default(uuid())
+  name            String
+  description     String?
+  retentionDays   Int             // Giorni dalla creazione/ultimo update
+  action          RetentionAction
+  isActive        Boolean         @default(true)
+  organizationId  String
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+
+  // Condizioni aggiuntive (metadata, stato, etc.)
+  conditions      Json?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  documents       Document[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
