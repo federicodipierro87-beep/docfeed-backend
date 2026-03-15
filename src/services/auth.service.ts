@@ -25,8 +25,8 @@ import {
 } from '../types/index.js';
 
 const BCRYPT_ROUNDS = 12;
-const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRES_IN || '15m';
-const REFRESH_TOKEN_EXPIRY = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+const ACCESS_TOKEN_EXPIRY = (process.env.JWT_EXPIRES_IN || '15m') as string;
+const REFRESH_TOKEN_EXPIRY = (process.env.JWT_REFRESH_EXPIRES_IN || '7d') as string;
 const PASSWORD_RESET_EXPIRY_HOURS = 24;
 
 // === REGISTRAZIONE ===
@@ -124,7 +124,7 @@ export async function generateTokenPair(user: User): Promise<TokenPair> {
   const accessToken = jwt.sign(
     { ...payload, jti: tokenId },
     process.env.JWT_SECRET!,
-    { expiresIn: ACCESS_TOKEN_EXPIRY }
+    { expiresIn: ACCESS_TOKEN_EXPIRY } as jwt.SignOptions
   );
 
   // Refresh token
@@ -132,7 +132,7 @@ export async function generateTokenPair(user: User): Promise<TokenPair> {
   const refreshToken = jwt.sign(
     { userId: user.id, jti: refreshTokenId, type: 'refresh' },
     process.env.JWT_REFRESH_SECRET!,
-    { expiresIn: REFRESH_TOKEN_EXPIRY }
+    { expiresIn: REFRESH_TOKEN_EXPIRY } as jwt.SignOptions
   );
 
   // Salva refresh token in Redis

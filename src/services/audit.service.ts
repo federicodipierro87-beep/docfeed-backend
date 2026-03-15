@@ -88,19 +88,15 @@ export async function getAuditLogs(
     ...(filters.endDate && { createdAt: { lte: filters.endDate } }),
   };
 
-  const cursorCondition = pagination.cursor
-    ? { cursor: { id: pagination.cursor }, skip: 1 }
-    : {};
-
   const logs = await prisma.auditLog.findMany({
     where,
-    ...cursorCondition,
     take: limit + 1,
     orderBy: { createdAt: 'desc' },
     include: {
       user: { select: { id: true, firstName: true, lastName: true, email: true } },
       document: { select: { id: true, name: true } },
     },
+    ...(pagination.cursor && { cursor: { id: pagination.cursor }, skip: 1 }),
   });
 
   const hasMore = logs.length > limit;
@@ -137,18 +133,14 @@ export async function getDocumentAuditLogs(
     return { items: [], nextCursor: null, hasMore: false };
   }
 
-  const cursorCondition = pagination.cursor
-    ? { cursor: { id: pagination.cursor }, skip: 1 }
-    : {};
-
   const logs = await prisma.auditLog.findMany({
     where: { documentId },
-    ...cursorCondition,
     take: limit + 1,
     orderBy: { createdAt: 'desc' },
     include: {
       user: { select: { id: true, firstName: true, lastName: true } },
     },
+    ...(pagination.cursor && { cursor: { id: pagination.cursor }, skip: 1 }),
   });
 
   const hasMore = logs.length > limit;
@@ -192,18 +184,14 @@ export async function getUserAuditLogs(
     return { items: [], nextCursor: null, hasMore: false };
   }
 
-  const cursorCondition = pagination.cursor
-    ? { cursor: { id: pagination.cursor }, skip: 1 }
-    : {};
-
   const logs = await prisma.auditLog.findMany({
     where: { userId: targetUserId },
-    ...cursorCondition,
     take: limit + 1,
     orderBy: { createdAt: 'desc' },
     include: {
       document: { select: { id: true, name: true } },
     },
+    ...(pagination.cursor && { cursor: { id: pagination.cursor }, skip: 1 }),
   });
 
   const hasMore = logs.length > limit;

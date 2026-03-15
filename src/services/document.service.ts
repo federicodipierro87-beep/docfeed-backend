@@ -235,13 +235,8 @@ export async function listDocuments(
   };
 
   // Cursor-based pagination
-  const cursorCondition = pagination.cursor
-    ? { cursor: { id: pagination.cursor }, skip: 1 }
-    : {};
-
   const documents = await prisma.document.findMany({
     where,
-    ...cursorCondition,
     take: limit + 1,
     orderBy: {
       [pagination.sortBy || 'createdAt']: pagination.sortOrder || 'desc',
@@ -253,6 +248,7 @@ export async function listDocuments(
       workflowState: { select: { id: true, name: true, color: true } },
       tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
     },
+    ...(pagination.cursor && { cursor: { id: pagination.cursor }, skip: 1 }),
   });
 
   const hasMore = documents.length > limit;
@@ -801,12 +797,12 @@ async function setDocumentMetadata(
   const metadataData: Prisma.DocumentMetadataUncheckedCreateInput = {
     documentId,
     fieldId,
-    textValue: null,
-    numberValue: null,
-    dateValue: null,
-    booleanValue: null,
-    jsonValue: null,
-    userRefId: null,
+    textValue: undefined,
+    numberValue: undefined,
+    dateValue: undefined,
+    booleanValue: undefined,
+    jsonValue: undefined,
+    userRefId: undefined,
   };
 
   switch (field.type) {
@@ -824,7 +820,7 @@ async function setDocumentMetadata(
       metadataData.booleanValue = Boolean(value);
       break;
     case 'MULTISELECT':
-      metadataData.jsonValue = value as Prisma.JsonValue;
+      metadataData.jsonValue = value as Prisma.InputJsonValue;
       break;
     case 'USER':
       metadataData.userRefId = String(value);
