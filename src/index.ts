@@ -82,7 +82,14 @@ async function start(): Promise<void> {
     await connectPrisma();
 
     // Connessione Redis
-    await connectRedis();
+    try {
+      await connectRedis();
+    } catch (redisError) {
+      logger.warn('Redis non disponibile, alcune funzionalità saranno limitate', {
+        error: (redisError as Error).message,
+      });
+      // Continua senza Redis per ora
+    }
 
     // Inizializzazione storage
     await initializeStorage();
