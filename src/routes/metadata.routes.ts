@@ -30,6 +30,12 @@ router.get(
       orderBy: { name: 'asc' },
       include: {
         fields: { orderBy: { order: 'asc' } },
+        classAttributes: {
+          orderBy: { order: 'asc' },
+          include: {
+            attribute: true,
+          },
+        },
         _count: { select: { vaults: true } },
       },
     });
@@ -81,6 +87,12 @@ router.get(
       },
       include: {
         fields: { orderBy: { order: 'asc' } },
+        classAttributes: {
+          orderBy: { order: 'asc' },
+          include: {
+            attribute: true,
+          },
+        },
         vaults: { select: { id: true, name: true } },
       },
     });
@@ -167,7 +179,140 @@ router.delete(
   })
 );
 
-// === CAMPI METADATA ===
+// === ATTRIBUTI CLASSE ===
+
+// Aggiungi attributo a classe
+router.post(
+  '/classes/:classId/attributes',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const { attributeId, isRequired, order } = req.body;
+
+    const metadataClass = await prisma.metadataClass.findFirst({
+      where: {
+        id: req.params.classId,
+        organizationId: req.user!.organizationId,
+      },
+    });
+
+    if (!metadataClass) {
+      throw new NotFoundError('Classe metadata');
+    }
+
+    // Verifica che l'attributo esista
+    const attribute = await prisma.metadataAttribute.findFirst({
+      where: {
+        id: attributeId,
+        organizationId: req.user!.organizationId,
+      },
+    });
+
+    if (!attribute) {
+      throw new NotFoundError('Attributo');
+    }
+
+    // Verifica se già associato
+    const existing = await prisma.metadataClassAttribute.findFirst({
+      where: {
+        classId: req.params.classId,
+        attributeId,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictError('Attributo già associato a questa classe');
+    }
+
+    // Calcola ordine se non specificato
+    let newOrder = order;
+    if (newOrder === undefined) {
+      const lastAttr = await prisma.metadataClassAttribute.findFirst({
+        where: { classId: req.params.classId },
+        orderBy: { order: 'desc' },
+      });
+      newOrder = lastAttr ? lastAttr.order + 1 : 0;
+    }
+
+    const classAttribute = await prisma.metadataClassAttribute.create({
+      data: {
+        classId: req.params.classId,
+        attributeId,
+        isRequired: isRequired || false,
+        order: newOrder,
+      },
+      include: {
+        attribute: true,
+      },
+    });
+
+    res.status(201).json({ success: true, data: classAttribute });
+  })
+);
+
+// Rimuovi attributo da classe
+router.delete(
+  '/classes/:classId/attributes/:attributeId',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const classAttribute = await prisma.metadataClassAttribute.findFirst({
+      where: {
+        classId: req.params.classId,
+        attributeId: req.params.attributeId,
+      },
+      include: {
+        class: true,
+      },
+    });
+
+    if (!classAttribute || classAttribute.class.organizationId !== req.user!.organizationId) {
+      throw new NotFoundError('Associazione attributo-classe');
+    }
+
+    await prisma.metadataClassAttribute.delete({
+      where: { id: classAttribute.id },
+    });
+
+    res.json({ success: true, message: 'Attributo rimosso dalla classe' });
+  })
+);
+
+// Aggiorna attributo in classe (ordine, obbligatorietà)
+router.patch(
+  '/classes/:classId/attributes/:attributeId',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const { isRequired, order } = req.body;
+
+    const classAttribute = await prisma.metadataClassAttribute.findFirst({
+      where: {
+        classId: req.params.classId,
+        attributeId: req.params.attributeId,
+      },
+      include: {
+        class: true,
+      },
+    });
+
+    if (!classAttribute || classAttribute.class.organizationId !== req.user!.organizationId) {
+      throw new NotFoundError('Associazione attributo-classe');
+    }
+
+    const updated = await prisma.metadataClassAttribute.update({
+      where: { id: classAttribute.id },
+      data: {
+        ...(isRequired !== undefined && { isRequired }),
+        ...(order !== undefined && { order }),
+      },
+      include: {
+        attribute: true,
+      },
+    });
+
+    res.json({ success: true, data: updated });
+  })
+);
+
+// === CAMPI METADATA (legacy) ===
 
 // Aggiungi campo a classe
 router.post(

@@ -52,6 +52,7 @@ model Organization {
   users              User[]
   vaults             Vault[]
   metadataClasses    MetadataClass[]
+  metadataAttributes MetadataAttribute[]
   workflows          Workflow[]
   retentionPolicies  RetentionPolicy[]
   tags               Tag[]
@@ -231,6 +232,27 @@ model DocumentVersion {
 
 // === METADATA DINAMICI ===
 
+// Attributi standalone (template di campi)
+model MetadataAttribute {
+  id              String            @id @default(uuid())
+  name            String
+  label           String
+  type            MetadataFieldType
+  isRequired      Boolean           @default(false)
+  isSearchable    Boolean           @default(true)
+  defaultValue    String?
+  options         Json?             // Per SELECT/MULTISELECT: array di opzioni
+  organizationId  String
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  classAttributes MetadataClassAttribute[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
 model MetadataClass {
   id              String            @id @default(uuid())
   name            String
@@ -241,10 +263,27 @@ model MetadataClass {
   updatedAt       DateTime          @updatedAt
 
   fields          MetadataField[]
+  classAttributes MetadataClassAttribute[]
   vaults          Vault[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
+}
+
+// Relazione many-to-many tra classi e attributi
+model MetadataClassAttribute {
+  id              String            @id @default(uuid())
+  classId         String
+  class           MetadataClass     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  attributeId     String
+  attribute       MetadataAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  order           Int               @default(0)
+  isRequired      Boolean           @default(false)  // Override per questa classe
+  createdAt       DateTime          @default(now())
+
+  @@unique([classId, attributeId])
+  @@index([classId])
+  @@index([attributeId])
 }
 
 enum MetadataFieldType {
@@ -258,6 +297,7 @@ enum MetadataFieldType {
   DOCUMENT_REF
 }
 
+// Campo legacy (per retrocompatibilità)
 model MetadataField {
   id              String            @id @default(uuid())
   name            String
