@@ -265,6 +265,10 @@ model MetadataClass {
   id              String            @id @default(uuid())
   name            String
   description     String?
+  // Gerarchia: classe padre/figli
+  parentId        String?
+  parent          MetadataClass?    @relation("ClassHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        MetadataClass[]   @relation("ClassHierarchy")
   // Permessi
   isPublic        Boolean           @default(true)  // Se true, visibile a tutti
   allowedRoles    Json?             // Array di ruoli: ["ADMIN", "MANAGER", "USER"]
@@ -280,6 +284,7 @@ model MetadataClass {
 
   @@unique([organizationId, name])
   @@index([organizationId])
+  @@index([parentId])
 }
 
 // Relazione many-to-many tra classi e attributi

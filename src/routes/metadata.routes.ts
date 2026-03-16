@@ -60,6 +60,8 @@ router.get(
       where: { organizationId: req.user!.organizationId },
       orderBy: { name: 'asc' },
       include: {
+        parent: { select: { id: true, name: true } },
+        children: { select: { id: true, name: true } },
         fields: { orderBy: { order: 'asc' } },
         classAttributes: {
           orderBy: { order: 'asc' },
@@ -67,7 +69,7 @@ router.get(
             attribute: true,
           },
         },
-        _count: { select: { vaults: true } },
+        _count: { select: { vaults: true, children: true } },
       },
     });
 
@@ -86,7 +88,7 @@ router.post(
   requireManager,
   validateBody(createMetadataClassSchema),
   asyncHandler(async (req, res) => {
-    const { name, description, isPublic, allowedRoles, allowedUserIds } = req.body;
+    const { name, description, parentId, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     // Verifica nome unico
     const existing = await prisma.metadataClass.findFirst({
@@ -100,14 +102,32 @@ router.post(
       throw new ConflictError('Classe metadata con questo nome già esistente');
     }
 
+    // Verifica che il parent esista se specificato
+    if (parentId) {
+      const parent = await prisma.metadataClass.findFirst({
+        where: {
+          id: parentId,
+          organizationId: req.user!.organizationId,
+        },
+      });
+
+      if (!parent) {
+        throw new NotFoundError('Classe padre');
+      }
+    }
+
     const metadataClass = await prisma.metadataClass.create({
       data: {
         name,
         description,
+        parentId: parentId || null,
         isPublic: isPublic !== false,
         allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : undefined,
         allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : undefined,
         organizationId: req.user!.organizationId,
+      },
+      include: {
+        parent: { select: { id: true, name: true } },
       },
     });
 
@@ -125,6 +145,11 @@ router.get(
         organizationId: req.user!.organizationId,
       },
       include: {
+        parent: { select: { id: true, name: true } },
+        children: {
+          select: { id: true, name: true, description: true },
+          orderBy: { name: 'asc' },
+        },
         fields: { orderBy: { order: 'asc' } },
         classAttributes: {
           orderBy: { order: 'asc' },
@@ -149,7 +174,7 @@ router.patch(
   '/classes/:id',
   requireManager,
   asyncHandler(async (req, res) => {
-    const { name, description, isPublic, allowedRoles, allowedUserIds } = req.body;
+    const { name, description, parentId, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     const metadataClass = await prisma.metadataClass.findFirst({
       where: {
@@ -177,14 +202,46 @@ router.patch(
       }
     }
 
+    // Verifica che il parent esista e non sia se stesso o un figlio
+    if (parentId !== undefined && parentId !== null) {
+      if (parentId === req.params.id) {
+        throw new ConflictError('Una classe non può essere padre di se stessa');
+      }
+
+      const parent = await prisma.metadataClass.findFirst({
+        where: {
+          id: parentId,
+          organizationId: req.user!.organizationId,
+        },
+      });
+
+      if (!parent) {
+        throw new NotFoundError('Classe padre');
+      }
+
+      // Verifica che il parent non sia un figlio di questa classe (evita cicli)
+      const children = await prisma.metadataClass.findMany({
+        where: { parentId: req.params.id },
+        select: { id: true },
+      });
+
+      if (children.some(c => c.id === parentId)) {
+        throw new ConflictError('Non puoi impostare un figlio come padre');
+      }
+    }
+
     const updated = await prisma.metadataClass.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
+        ...(parentId !== undefined && { parentId: parentId || null }),
         ...(isPublic !== undefined && { isPublic }),
         ...(allowedRoles !== undefined && { allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : Prisma.JsonNull }),
         ...(allowedUserIds !== undefined && { allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : Prisma.JsonNull }),
+      },
+      include: {
+        parent: { select: { id: true, name: true } },
       },
     });
 
