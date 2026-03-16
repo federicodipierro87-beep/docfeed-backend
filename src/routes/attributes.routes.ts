@@ -1,6 +1,7 @@
 // Routes Attributi Metadata per DocuVault
 
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/prisma.service.js';
 import { authenticate, requireManager, requireAdmin } from '../middleware/auth.middleware.js';
 import { requireValidLicense, requireFeature } from '../middleware/license.middleware.js';
@@ -68,7 +69,7 @@ router.post(
         isRequired: isRequired || false,
         isSearchable: isSearchable !== false,
         defaultValue,
-        options: options ? JSON.stringify(options) : null,
+        options: options ? JSON.stringify(options) : undefined,
         organizationId: req.user!.organizationId,
       },
     });
@@ -128,7 +129,7 @@ router.patch(
         ...(isRequired !== undefined && { isRequired }),
         ...(isSearchable !== undefined && { isSearchable }),
         ...(defaultValue !== undefined && { defaultValue }),
-        ...(options !== undefined && { options: options ? JSON.stringify(options) : null }),
+        ...(options !== undefined && { options: options ? JSON.stringify(options) : Prisma.JsonNull }),
       },
     });
 
