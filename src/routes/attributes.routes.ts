@@ -15,6 +15,36 @@ router.use(authenticate);
 router.use(requireValidLicense);
 router.use(requireFeature('custom_metadata'));
 
+// Helper: verifica se l'utente può vedere l'attributo/classe
+function canUserAccess(
+  item: { isPublic: boolean; allowedRoles?: any; allowedUserIds?: any },
+  user: { userId: string; role: string }
+): boolean {
+  // Se pubblico, tutti possono vedere
+  if (item.isPublic) return true;
+
+  // Admin e Manager vedono tutto
+  if (user.role === 'ADMIN' || user.role === 'MANAGER') return true;
+
+  // Controlla ruoli permessi
+  if (item.allowedRoles) {
+    const roles = typeof item.allowedRoles === 'string'
+      ? JSON.parse(item.allowedRoles)
+      : item.allowedRoles;
+    if (Array.isArray(roles) && roles.includes(user.role)) return true;
+  }
+
+  // Controlla user ID specifici
+  if (item.allowedUserIds) {
+    const userIds = typeof item.allowedUserIds === 'string'
+      ? JSON.parse(item.allowedUserIds)
+      : item.allowedUserIds;
+    if (Array.isArray(userIds) && userIds.includes(user.userId)) return true;
+  }
+
+  return false;
+}
+
 // === ATTRIBUTI ===
 
 // Lista attributi
@@ -29,7 +59,12 @@ router.get(
       },
     });
 
-    res.json({ success: true, data: attributes });
+    // Filtra in base ai permessi
+    const filtered = attributes.filter(attr =>
+      canUserAccess(attr, { userId: req.user!.userId, role: req.user!.role })
+    );
+
+    res.json({ success: true, data: filtered });
   })
 );
 
@@ -38,7 +73,10 @@ router.post(
   '/',
   requireManager,
   asyncHandler(async (req, res) => {
-    const { name, label, type, isRequired, isSearchable, defaultValue, options } = req.body;
+    const {
+      name, label, type, isRequired, isSearchable, defaultValue, options,
+      isPublic, allowedRoles, allowedUserIds
+    } = req.body;
 
     if (!name || !label || !type) {
       res.status(400).json({
@@ -70,6 +108,9 @@ router.post(
         isSearchable: isSearchable !== false,
         defaultValue,
         options: options ? JSON.stringify(options) : undefined,
+        isPublic: isPublic !== false,
+        allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : undefined,
+        allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : undefined,
         organizationId: req.user!.organizationId,
       },
     });
@@ -109,7 +150,7 @@ router.patch(
   '/:id',
   requireManager,
   asyncHandler(async (req, res) => {
-    const { label, isRequired, isSearchable, defaultValue, options } = req.body;
+    const { label, isRequired, isSearchable, defaultValue, options, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     const attribute = await prisma.metadataAttribute.findFirst({
       where: {
@@ -130,6 +171,9 @@ router.patch(
         ...(isSearchable !== undefined && { isSearchable }),
         ...(defaultValue !== undefined && { defaultValue }),
         ...(options !== undefined && { options: options ? JSON.stringify(options) : Prisma.JsonNull }),
+        ...(isPublic !== undefined && { isPublic }),
+        ...(allowedRoles !== undefined && { allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : Prisma.JsonNull }),
+        ...(allowedUserIds !== undefined && { allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : Prisma.JsonNull }),
       },
     });
 

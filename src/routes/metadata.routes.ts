@@ -1,6 +1,7 @@
 // Routes Metadata per DocuVault
 
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/prisma.service.js';
 import { authenticate, requireManager, requireAdmin } from '../middleware/auth.middleware.js';
 import { requireValidLicense, requireFeature } from '../middleware/license.middleware.js';
@@ -18,6 +19,36 @@ const router = Router();
 router.use(authenticate);
 router.use(requireValidLicense);
 router.use(requireFeature('custom_metadata'));
+
+// Helper: verifica se l'utente può vedere la classe
+function canUserAccess(
+  item: { isPublic: boolean; allowedRoles?: any; allowedUserIds?: any },
+  user: { userId: string; role: string }
+): boolean {
+  // Se pubblico, tutti possono vedere
+  if (item.isPublic) return true;
+
+  // Admin e Manager vedono tutto
+  if (user.role === 'ADMIN' || user.role === 'MANAGER') return true;
+
+  // Controlla ruoli permessi
+  if (item.allowedRoles) {
+    const roles = typeof item.allowedRoles === 'string'
+      ? JSON.parse(item.allowedRoles)
+      : item.allowedRoles;
+    if (Array.isArray(roles) && roles.includes(user.role)) return true;
+  }
+
+  // Controlla user ID specifici
+  if (item.allowedUserIds) {
+    const userIds = typeof item.allowedUserIds === 'string'
+      ? JSON.parse(item.allowedUserIds)
+      : item.allowedUserIds;
+    if (Array.isArray(userIds) && userIds.includes(user.userId)) return true;
+  }
+
+  return false;
+}
 
 // === CLASSI METADATA ===
 
@@ -40,7 +71,12 @@ router.get(
       },
     });
 
-    res.json({ success: true, data: classes });
+    // Filtra in base ai permessi
+    const filtered = classes.filter(cls =>
+      canUserAccess(cls, { userId: req.user!.userId, role: req.user!.role })
+    );
+
+    res.json({ success: true, data: filtered });
   })
 );
 
@@ -50,7 +86,7 @@ router.post(
   requireManager,
   validateBody(createMetadataClassSchema),
   asyncHandler(async (req, res) => {
-    const { name, description } = req.body;
+    const { name, description, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     // Verifica nome unico
     const existing = await prisma.metadataClass.findFirst({
@@ -68,6 +104,9 @@ router.post(
       data: {
         name,
         description,
+        isPublic: isPublic !== false,
+        allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : undefined,
+        allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : undefined,
         organizationId: req.user!.organizationId,
       },
     });
@@ -110,7 +149,7 @@ router.patch(
   '/classes/:id',
   requireManager,
   asyncHandler(async (req, res) => {
-    const { name, description } = req.body;
+    const { name, description, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     const metadataClass = await prisma.metadataClass.findFirst({
       where: {
@@ -143,6 +182,9 @@ router.patch(
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
+        ...(isPublic !== undefined && { isPublic }),
+        ...(allowedRoles !== undefined && { allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : Prisma.JsonNull }),
+        ...(allowedUserIds !== undefined && { allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : Prisma.JsonNull }),
       },
     });
 

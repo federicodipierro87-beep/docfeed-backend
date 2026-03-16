@@ -242,6 +242,10 @@ model MetadataAttribute {
   isSearchable    Boolean           @default(true)
   defaultValue    String?
   options         Json?             // Per SELECT/MULTISELECT: array di opzioni
+  // Permessi
+  isPublic        Boolean           @default(true)  // Se true, visibile a tutti
+  allowedRoles    Json?             // Array di ruoli: ["ADMIN", "MANAGER", "USER"]
+  allowedUserIds  Json?             // Array di user ID specifici
   organizationId  String
   organization    Organization      @relation(fields: [organizationId], references: [id])
   createdAt       DateTime          @default(now())
@@ -257,6 +261,10 @@ model MetadataClass {
   id              String            @id @default(uuid())
   name            String
   description     String?
+  // Permessi
+  isPublic        Boolean           @default(true)  // Se true, visibile a tutti
+  allowedRoles    Json?             // Array di ruoli: ["ADMIN", "MANAGER", "USER"]
+  allowedUserIds  Json?             // Array di user ID specifici
   organizationId  String
   organization    Organization      @relation(fields: [organizationId], references: [id])
   createdAt       DateTime          @default(now())
