@@ -13,6 +13,7 @@ import {
   restoreDocument,
   permanentDeleteDocument,
   getDocumentDownloadUrl,
+  generateEmailFile,
 } from '../services/document.service.js';
 import { getAvailableTransitions, transitionDocument } from '../services/workflow.service.js';
 import { getDocumentAuditLogs } from '../services/audit.service.js';
@@ -329,6 +330,23 @@ export const downloadController = asyncHandler(async (req: Request, res: Respons
     success: true,
     data: { url, filename },
   });
+});
+
+/**
+ * GET /api/documents/:id/email
+ * Genera file .eml con documento allegato
+ */
+export const emailController = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const { emlContent, filename } = await generateEmailFile(
+    id,
+    req.user as JwtPayload
+  );
+
+  res.setHeader('Content-Type', 'message/rfc822');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(emlContent);
 });
 
 // === WORKFLOW ===

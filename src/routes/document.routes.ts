@@ -14,6 +14,7 @@ import {
   checkoutController,
   checkinController,
   downloadController,
+  emailController,
   getTransitionsController,
   transitionController,
   getAuditController,
@@ -79,6 +80,9 @@ router.post(
 
 // Download
 router.get('/:id/download', downloadController);
+
+// Email (genera .eml con allegato)
+router.get('/:id/email', emailController);
 
 // Workflow
 router.get('/:id/transitions', getTransitionsController);

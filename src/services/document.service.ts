@@ -6,6 +6,7 @@ import { prisma } from './prisma.service.js';
 import {
   uploadFile,
   deleteFile,
+  downloadFile,
   getDownloadUrl,
   generateStoragePath,
 } from './storage.service.js';
@@ -733,6 +734,69 @@ export async function getDocumentDownloadUrl(
   const filename = `${document.name}_v${version.versionNumber}.${extension}`;
 
   return { url, filename };
+}
+
+/**
+ * Genera un file .eml con il documento allegato
+ */
+export async function generateEmailFile(
+  documentId: string,
+  user: JwtPayload
+): Promise<{ emlContent: string; filename: string }> {
+  const document = await prisma.document.findFirst({
+    where: {
+      id: documentId,
+      vault: { organizationId: user.organizationId },
+      deletedAt: null,
+    },
+    include: {
+      currentVersion: true,
+    },
+  });
+
+  if (!document) {
+    throw new NotFoundError('Documento');
+  }
+
+  // Verifica permessi
+  const hasAccess = await checkDocumentAccess(documentId, user.userId, user.role, 'READ');
+  if (!hasAccess) {
+    throw new AuthorizationError('Download non autorizzato');
+  }
+
+  const version = document.currentVersion;
+  if (!version) {
+    throw new NotFoundError('Versione documento');
+  }
+
+  // Scarica il file dallo storage
+  const fileBuffer = await downloadFile(version.storagePath);
+  const base64Content = fileBuffer.toString('base64');
+
+  // Crea il contenuto .eml
+  const boundary = '----=_Part_0_' + Date.now();
+  const emlContent = [
+    'MIME-Version: 1.0',
+    `Subject: ${document.name}`,
+    'X-Unsent: 1',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    `In allegato: ${document.name}`,
+    '',
+    `--${boundary}`,
+    `Content-Type: ${document.mimeType}; name="${document.name}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${document.name}"`,
+    '',
+    base64Content,
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  return { emlContent, filename: `${document.name}.eml` };
 }
 
 // === HELPER FUNCTIONS ===
