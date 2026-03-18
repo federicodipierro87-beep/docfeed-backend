@@ -50,6 +50,7 @@ model Organization {
 
   license            License?
   users              User[]
+  userGroups         UserGroup[]
   vaults             Vault[]
   metadataClasses    MetadataClass[]
   metadataAttributes MetadataAttribute[]
@@ -94,9 +95,41 @@ model User {
   documentPermissions DocumentPermission[]
   workflowAssignments WorkflowStateDefinition[] @relation("WorkflowAssignees")
   auditLogs          AuditLog[]
+  groupMemberships   UserGroupMember[]
 
   @@index([email])
   @@index([organizationId])
+}
+
+// === GRUPPI UTENTI ===
+
+model UserGroup {
+  id              String            @id @default(uuid())
+  name            String
+  description     String?
+  color           String            @default("#6366f1")
+  organizationId  String
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  members         UserGroupMember[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model UserGroupMember {
+  id        String    @id @default(uuid())
+  groupId   String
+  group     UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
 }
 
 model RefreshToken {
