@@ -1,47 +1,16 @@
 // Controller Vault per DocuVault
 
 import { Request, Response } from 'express';
-import { Prisma } from '@prisma/client';
 import { prisma } from '../services/prisma.service.js';
 import { asyncHandler } from '../middleware/error.middleware.js';
 import { NotFoundError, ConflictError } from '../types/index.js';
-
-// Helper: verifica se l'utente può vedere il vault
-function canUserAccess(
-  item: { isPublic: boolean; allowedRoles?: any; allowedUserIds?: any },
-  user: { userId: string; role: string }
-): boolean {
-  // Se pubblico, tutti possono vedere
-  if (item.isPublic) return true;
-
-  // Admin e Manager vedono tutto
-  if (user.role === 'ADMIN' || user.role === 'MANAGER') return true;
-
-  // Controlla ruoli permessi
-  if (item.allowedRoles) {
-    const roles = typeof item.allowedRoles === 'string'
-      ? JSON.parse(item.allowedRoles)
-      : item.allowedRoles;
-    if (Array.isArray(roles) && roles.includes(user.role)) return true;
-  }
-
-  // Controlla user ID specifici
-  if (item.allowedUserIds) {
-    const userIds = typeof item.allowedUserIds === 'string'
-      ? JSON.parse(item.allowedUserIds)
-      : item.allowedUserIds;
-    if (Array.isArray(userIds) && userIds.includes(user.userId)) return true;
-  }
-
-  return false;
-}
 
 /**
  * POST /api/vaults
  * Crea nuovo vault
  */
 export const createVaultController = asyncHandler(async (req: Request, res: Response) => {
-  const { name, description, icon, color, metadataClassId, isPublic, allowedRoles, allowedUserIds } = req.body;
+  const { name, description, icon, color, metadataClassId } = req.body;
 
   // Verifica nome unico
   const existing = await prisma.vault.findFirst({
@@ -76,9 +45,6 @@ export const createVaultController = asyncHandler(async (req: Request, res: Resp
       icon,
       color,
       metadataClassId,
-      isPublic: isPublic !== false,
-      allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : undefined,
-      allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : undefined,
       organizationId: req.user!.organizationId,
     },
   });
@@ -94,8 +60,21 @@ export const createVaultController = asyncHandler(async (req: Request, res: Resp
  * Lista vault dell'organizzazione
  */
 export const listVaultsController = asyncHandler(async (req: Request, res: Response) => {
+  const userRole = req.user!.role;
+  const userId = req.user!.userId;
+
+  // Admin e Manager vedono tutti i vault
+  // Gli altri utenti vedono solo i vault di cui sono membri
+  const whereClause: any = { organizationId: req.user!.organizationId };
+
+  if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    whereClause.members = {
+      some: { userId },
+    };
+  }
+
   const vaults = await prisma.vault.findMany({
-    where: { organizationId: req.user!.organizationId },
+    where: whereClause,
     orderBy: { name: 'asc' },
     include: {
       metadataClass: {
@@ -106,19 +85,14 @@ export const listVaultsController = asyncHandler(async (req: Request, res: Respo
         },
       },
       _count: {
-        select: { documents: { where: { deletedAt: null } } },
+        select: { documents: { where: { deletedAt: null } }, members: true },
       },
     },
   });
 
-  // Filtra in base ai permessi
-  const filtered = vaults.filter(vault =>
-    canUserAccess(vault, { userId: req.user!.userId, role: req.user!.role })
-  );
-
   res.json({
     success: true,
-    data: filtered,
+    data: vaults,
   });
 });
 
@@ -164,7 +138,7 @@ export const getVaultController = asyncHandler(async (req: Request, res: Respons
  */
 export const updateVaultController = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, description, icon, color, metadataClassId, isPublic, allowedRoles, allowedUserIds } = req.body;
+  const { name, description, icon, color, metadataClassId } = req.body;
 
   const vault = await prisma.vault.findFirst({
     where: {
@@ -216,9 +190,6 @@ export const updateVaultController = asyncHandler(async (req: Request, res: Resp
       ...(icon !== undefined && { icon }),
       ...(color !== undefined && { color }),
       ...(metadataClassId !== undefined && { metadataClassId }),
-      ...(isPublic !== undefined && { isPublic }),
-      ...(allowedRoles !== undefined && { allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : Prisma.JsonNull }),
-      ...(allowedUserIds !== undefined && { allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : Prisma.JsonNull }),
     },
   });
 
