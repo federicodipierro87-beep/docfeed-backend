@@ -51,6 +51,7 @@ model Organization {
   license            License?
   users              User[]
   userGroups         UserGroup[]
+  savedViews         SavedView[]
   vaults             Vault[]
   metadataClasses    MetadataClass[]
   metadataAttributes MetadataAttribute[]
@@ -96,6 +97,7 @@ model User {
   workflowAssignments WorkflowStateDefinition[] @relation("WorkflowAssignees")
   auditLogs          AuditLog[]
   groupMemberships   UserGroupMember[]
+  savedViews         SavedView[]
 
   @@index([email])
   @@index([organizationId])
@@ -130,6 +132,27 @@ model UserGroupMember {
   @@unique([groupId, userId])
   @@index([groupId])
   @@index([userId])
+}
+
+// === VISTE SALVATE ===
+
+model SavedView {
+  id              String       @id @default(uuid())
+  name            String
+  description     String?
+  icon            String?      @default("folder-search")
+  color           String?      @default("#6366f1")
+  filters         Json         // Filtri della ricerca: { vaultId, status, mimeType, tags, search, etc. }
+  isPublic        Boolean      @default(false)  // Se true, visibile a tutti
+  createdById     String
+  createdBy       User         @relation(fields: [createdById], references: [id])
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([createdById])
 }
 
 model RefreshToken {
