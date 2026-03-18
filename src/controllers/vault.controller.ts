@@ -336,3 +336,161 @@ export const getVaultStatsController = asyncHandler(async (req: Request, res: Re
     },
   });
 });
+
+/**
+ * GET /api/vaults/:id/members
+ * Lista membri del vault
+ */
+export const listVaultMembersController = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const vault = await prisma.vault.findFirst({
+    where: {
+      id,
+      organizationId: req.user!.organizationId,
+    },
+  });
+
+  if (!vault) {
+    throw new NotFoundError('Vault');
+  }
+
+  const members = await prisma.vaultMember.findMany({
+    where: { vaultId: id },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  res.json({
+    success: true,
+    data: members,
+  });
+});
+
+/**
+ * POST /api/vaults/:id/members
+ * Aggiungi membro al vault
+ */
+export const addVaultMemberController = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { userId, canEdit } = req.body;
+
+  const vault = await prisma.vault.findFirst({
+    where: {
+      id,
+      organizationId: req.user!.organizationId,
+    },
+  });
+
+  if (!vault) {
+    throw new NotFoundError('Vault');
+  }
+
+  // Verifica utente
+  const targetUser = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      organizationId: req.user!.organizationId,
+    },
+  });
+
+  if (!targetUser) {
+    throw new NotFoundError('Utente');
+  }
+
+  // Verifica se già membro
+  const existing = await prisma.vaultMember.findUnique({
+    where: { vaultId_userId: { vaultId: id, userId } },
+  });
+
+  if (existing) {
+    throw new ConflictError('Utente già membro del vault');
+  }
+
+  const member = await prisma.vaultMember.create({
+    data: {
+      vaultId: id,
+      userId,
+      canEdit: canEdit || false,
+    },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+      },
+    },
+  });
+
+  res.status(201).json({
+    success: true,
+    data: member,
+  });
+});
+
+/**
+ * PATCH /api/vaults/:id/members/:userId
+ * Aggiorna permessi membro
+ */
+export const updateVaultMemberController = asyncHandler(async (req: Request, res: Response) => {
+  const { id, userId } = req.params;
+  const { canEdit } = req.body;
+
+  const member = await prisma.vaultMember.findFirst({
+    where: {
+      vaultId: id,
+      userId,
+      vault: { organizationId: req.user!.organizationId },
+    },
+  });
+
+  if (!member) {
+    throw new NotFoundError('Membro');
+  }
+
+  const updated = await prisma.vaultMember.update({
+    where: { vaultId_userId: { vaultId: id, userId } },
+    data: { canEdit },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+      },
+    },
+  });
+
+  res.json({
+    success: true,
+    data: updated,
+  });
+});
+
+/**
+ * DELETE /api/vaults/:id/members/:userId
+ * Rimuovi membro dal vault
+ */
+export const removeVaultMemberController = asyncHandler(async (req: Request, res: Response) => {
+  const { id, userId } = req.params;
+
+  const member = await prisma.vaultMember.findFirst({
+    where: {
+      vaultId: id,
+      userId,
+      vault: { organizationId: req.user!.organizationId },
+    },
+  });
+
+  if (!member) {
+    throw new NotFoundError('Membro');
+  }
+
+  await prisma.vaultMember.delete({
+    where: { vaultId_userId: { vaultId: id, userId } },
+  });
+
+  res.json({
+    success: true,
+    message: 'Membro rimosso dal vault',
+  });
+});

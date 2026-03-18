@@ -60,6 +60,7 @@ router.get(
       where: { organizationId: req.user!.organizationId },
       orderBy: { name: 'asc' },
       include: {
+        vault: { select: { id: true, name: true } },
         parent: { select: { id: true, name: true } },
         children: { select: { id: true, name: true } },
         fields: { orderBy: { order: 'asc' } },
@@ -69,7 +70,7 @@ router.get(
             attribute: true,
           },
         },
-        _count: { select: { vaults: true, children: true } },
+        _count: { select: { vaultsUsingThis: true, children: true } },
       },
     });
 
@@ -88,7 +89,7 @@ router.post(
   requireManager,
   validateBody(createMetadataClassSchema),
   asyncHandler(async (req, res) => {
-    const { name, description, parentId, isPublic, allowedRoles, allowedUserIds } = req.body;
+    const { name, description, parentId, vaultId, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     // Verifica nome unico
     const existing = await prisma.metadataClass.findFirst({
@@ -116,17 +117,33 @@ router.post(
       }
     }
 
+    // Verifica che il vault esista se specificato
+    if (vaultId) {
+      const vault = await prisma.vault.findFirst({
+        where: {
+          id: vaultId,
+          organizationId: req.user!.organizationId,
+        },
+      });
+
+      if (!vault) {
+        throw new NotFoundError('Vault');
+      }
+    }
+
     const metadataClass = await prisma.metadataClass.create({
       data: {
         name,
         description,
         parentId: parentId || null,
+        vaultId: vaultId || null,
         isPublic: isPublic !== false,
         allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : undefined,
         allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : undefined,
         organizationId: req.user!.organizationId,
       },
       include: {
+        vault: { select: { id: true, name: true } },
         parent: { select: { id: true, name: true } },
       },
     });
@@ -145,6 +162,7 @@ router.get(
         organizationId: req.user!.organizationId,
       },
       include: {
+        vault: { select: { id: true, name: true } },
         parent: { select: { id: true, name: true } },
         children: {
           select: { id: true, name: true, description: true },
@@ -157,7 +175,7 @@ router.get(
             attribute: true,
           },
         },
-        vaults: { select: { id: true, name: true } },
+        vaultsUsingThis: { select: { id: true, name: true } },
       },
     });
 
@@ -174,7 +192,7 @@ router.patch(
   '/classes/:id',
   requireManager,
   asyncHandler(async (req, res) => {
-    const { name, description, parentId, isPublic, allowedRoles, allowedUserIds } = req.body;
+    const { name, description, parentId, vaultId, isPublic, allowedRoles, allowedUserIds } = req.body;
 
     const metadataClass = await prisma.metadataClass.findFirst({
       where: {
@@ -230,17 +248,33 @@ router.patch(
       }
     }
 
+    // Verifica che il vault esista se specificato
+    if (vaultId !== undefined && vaultId !== null) {
+      const vault = await prisma.vault.findFirst({
+        where: {
+          id: vaultId,
+          organizationId: req.user!.organizationId,
+        },
+      });
+
+      if (!vault) {
+        throw new NotFoundError('Vault');
+      }
+    }
+
     const updated = await prisma.metadataClass.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
         ...(parentId !== undefined && { parentId: parentId || null }),
+        ...(vaultId !== undefined && { vaultId: vaultId || null }),
         ...(isPublic !== undefined && { isPublic }),
         ...(allowedRoles !== undefined && { allowedRoles: allowedRoles ? JSON.stringify(allowedRoles) : Prisma.JsonNull }),
         ...(allowedUserIds !== undefined && { allowedUserIds: allowedUserIds ? JSON.stringify(allowedUserIds) : Prisma.JsonNull }),
       },
       include: {
+        vault: { select: { id: true, name: true } },
         parent: { select: { id: true, name: true } },
       },
     });
@@ -260,7 +294,7 @@ router.delete(
         organizationId: req.user!.organizationId,
       },
       include: {
-        _count: { select: { vaults: true } },
+        _count: { select: { vaultsUsingThis: true } },
       },
     });
 
@@ -268,7 +302,7 @@ router.delete(
       throw new NotFoundError('Classe metadata');
     }
 
-    if (metadataClass._count.vaults > 0) {
+    if (metadataClass._count.vaultsUsingThis > 0) {
       throw new ConflictError('Impossibile eliminare classe con vault associati');
     }
 

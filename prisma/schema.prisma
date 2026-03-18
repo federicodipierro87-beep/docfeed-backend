@@ -98,6 +98,7 @@ model User {
   auditLogs          AuditLog[]
   groupMemberships   UserGroupMember[]
   savedViews         SavedView[]
+  vaultMemberships   VaultMember[]
 
   @@index([email])
   @@index([organizationId])
@@ -188,22 +189,35 @@ model Vault {
   description     String?
   icon            String?
   color           String?
-  // Permessi
-  isPublic        Boolean       @default(true)  // Se true, visibile a tutti
-  allowedRoles    Json?         // Array di ruoli: ["ADMIN", "MANAGER", "USER"]
-  allowedUserIds  Json?         // Array di user ID specifici
   organizationId  String
   organization    Organization  @relation(fields: [organizationId], references: [id])
   metadataClassId String?
-  metadataClass   MetadataClass? @relation(fields: [metadataClassId], references: [id])
+  metadataClass   MetadataClass? @relation("VaultMetadataClass", fields: [metadataClassId], references: [id])
   isDefault       Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  documents Document[]
+  documents      Document[]
+  members        VaultMember[]
+  classesInVault MetadataClass[] @relation("ClassVault")
 
   @@unique([organizationId, name])
   @@index([organizationId])
+}
+
+// Associazione utenti ai vault
+model VaultMember {
+  id        String   @id @default(uuid())
+  vaultId   String
+  vault     Vault    @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  canEdit   Boolean  @default(false)  // Se può modificare/caricare documenti
+  createdAt DateTime @default(now())
+
+  @@unique([vaultId, userId])
+  @@index([vaultId])
+  @@index([userId])
 }
 
 enum DocumentStatus {
@@ -321,6 +335,9 @@ model MetadataClass {
   id              String            @id @default(uuid())
   name            String
   description     String?
+  // Vault di appartenenza (determina dove vanno i documenti)
+  vaultId         String?
+  vault           Vault?            @relation("ClassVault", fields: [vaultId], references: [id], onDelete: SetNull)
   // Gerarchia: classe padre/figli
   parentId        String?
   parent          MetadataClass?    @relation("ClassHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
@@ -336,11 +353,12 @@ model MetadataClass {
 
   fields          MetadataField[]
   classAttributes MetadataClassAttribute[]
-  vaults          Vault[]
+  vaultsUsingThis Vault[]           @relation("VaultMetadataClass")
 
   @@unique([organizationId, name])
   @@index([organizationId])
   @@index([parentId])
+  @@index([vaultId])
 }
 
 // Relazione many-to-many tra classi e attributi

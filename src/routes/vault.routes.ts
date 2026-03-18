@@ -8,6 +8,10 @@ import {
   updateVaultController,
   deleteVaultController,
   getVaultStatsController,
+  listVaultMembersController,
+  addVaultMemberController,
+  updateVaultMemberController,
+  removeVaultMemberController,
 } from '../controllers/vault.controller.js';
 import { authenticate, requireManager, requireAdmin } from '../middleware/auth.middleware.js';
 import { requireValidLicense } from '../middleware/license.middleware.js';
@@ -37,5 +41,11 @@ router.patch('/:id', requireManager, validateBody(updateVaultSchema), updateVaul
 
 // Eliminazione vault (admin)
 router.delete('/:id', requireAdmin, deleteVaultController);
+
+// Membri vault (admin)
+router.get('/:id/members', requireAdmin, listVaultMembersController);
+router.post('/:id/members', requireAdmin, addVaultMemberController);
+router.patch('/:id/members/:userId', requireAdmin, updateVaultMemberController);
+router.delete('/:id/members/:userId', requireAdmin, removeVaultMemberController);
 
 export default router;
