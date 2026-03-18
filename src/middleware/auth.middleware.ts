@@ -140,6 +140,59 @@ export function requireManager(req: Request, res: Response, next: NextFunction):
 }
 
 /**
+ * Middleware per autenticazione con token in query string (per download/apertura file)
+ */
+export function authenticateWithQueryToken(req: Request, res: Response, next: NextFunction): void {
+  try {
+    // Prima prova query parameter
+    let token = req.query.token as string | undefined;
+
+    // Fallback a header Authorization
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (!token) {
+      throw new AuthenticationError('Token non fornito');
+    }
+
+    // Verifica e decodifica token
+    const payload = verifyAccessToken(token);
+
+    // Verifica se token è nella blacklist (per logout)
+    isAccessTokenBlacklisted(payload.jti)
+      .then((isBlacklisted) => {
+        if (isBlacklisted) {
+          res.status(401).json({
+            success: false,
+            error: 'Token revocato',
+            code: 'TOKEN_REVOKED',
+          });
+          return;
+        }
+
+        // Aggiungi payload alla request
+        req.user = payload;
+        next();
+      })
+      .catch(next);
+  } catch (error) {
+    if (error instanceof AuthenticationError) {
+      res.status(401).json({
+        success: false,
+        error: error.message,
+        code: error.code,
+      });
+    } else {
+      next(error);
+    }
+  }
+}
+
+/**
  * Middleware opzionale - non blocca se non autenticato
  */
 export function optionalAuth(req: Request, res: Response, next: NextFunction): void {

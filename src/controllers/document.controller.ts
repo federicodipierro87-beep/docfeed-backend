@@ -345,7 +345,7 @@ export const emailController = asyncHandler(async (req: Request, res: Response) 
   );
 
   res.setHeader('Content-Type', 'message/rfc822');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   res.send(emlContent);
 });
 

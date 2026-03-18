@@ -20,13 +20,16 @@ import {
   getAuditController,
   listTrashController,
 } from '../controllers/document.controller.js';
-import { authenticate, requireManager, requireAdmin } from '../middleware/auth.middleware.js';
+import { authenticate, authenticateWithQueryToken, requireManager, requireAdmin } from '../middleware/auth.middleware.js';
 import { requireValidLicense, checkStorageLimitMiddleware } from '../middleware/license.middleware.js';
 import { uploadSingle, requireFile, handleUploadError } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
-// Middleware autenticazione e licenza su tutte le routes
+// Email (genera .eml con allegato) - usa token in query string per apertura diretta nel browser
+router.get('/:id/email', authenticateWithQueryToken, requireValidLicense, emailController);
+
+// Middleware autenticazione e licenza su tutte le altre routes
 router.use(authenticate);
 router.use(requireValidLicense);
 
@@ -80,9 +83,6 @@ router.post(
 
 // Download
 router.get('/:id/download', downloadController);
-
-// Email (genera .eml con allegato)
-router.get('/:id/email', emailController);
 
 // Workflow
 router.get('/:id/transitions', getTransitionsController);
