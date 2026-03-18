@@ -344,8 +344,12 @@ export const emailController = asyncHandler(async (req: Request, res: Response) 
     req.user as JwtPayload
   );
 
+  // Header per download sicuro
   res.setHeader('Content-Type', 'message/rfc822');
-  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', Buffer.byteLength(emlContent, 'utf8'));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.send(emlContent);
 });
 
