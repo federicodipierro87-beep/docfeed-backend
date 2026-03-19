@@ -127,6 +127,14 @@ export const executeViewController = asyncHandler(async (req: Request, res: Resp
     where.createdAt = { ...where.createdAt, lte: new Date(filters.createdBefore) };
   }
 
+  if (filters.updatedAfter) {
+    where.updatedAt = { ...where.updatedAt, gte: new Date(filters.updatedAfter) };
+  }
+
+  if (filters.updatedBefore) {
+    where.updatedAt = { ...where.updatedAt, lte: new Date(filters.updatedBefore) };
+  }
+
   if (filters.search) {
     where.OR = [
       { name: { contains: filters.search, mode: 'insensitive' } },
